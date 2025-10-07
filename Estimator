@@ -1,0 +1,187 @@
+import React, { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
+export default function EventCostEstimator() {
+  const [rawData, setRawData] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [itemsByCategory, setItemsByCategory] = useState({});
+  const [selections, setSelections] = useState([]);
+  const [customer, setCustomer] = useState({ name: "", surname: "", email: "", phone: "", date: "", comment: "" });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [lastUpload, setLastUpload] = useState(null);
+
+  const ADMIN_PASSWORD = "SecureAdmin2025!";
+
+  function authenticateAdmin() {
+    if (password === ADMIN_PASSWORD) {
+      setIsAdmin(true);
+      setAuthError("");
+    } else {
+      setAuthError("Incorrect password. Please try again.");
+    }
+  }
+
+  async function handleAdminUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    const parsed = parseSheetRows(json);
+
+    setRawData(parsed);
+    buildLookup(parsed);
+
+    const uploadTime = new Date().toLocaleString();
+    setLastUpload(uploadTime);
+    localStorage.setItem("lastUpload", uploadTime);
+    alert(`Master XLSX uploaded successfully at ${uploadTime}`);
+  }
+
+  useEffect(() => {
+    const stored = localStorage.getItem("lastUpload");
+    if (stored) setLastUpload(stored);
+  }, []);
+
+  function parseSheetRows(rows) {
+    const results = [];
+    for (let i = 1; i < rows.length; i++) {
+      const [category, addon, price, notes] = rows[i];
+      if (category || addon) results.push({ category, addon, price, notes });
+    }
+    return results;
+  }
+
+  function buildLookup(parsed) {
+    const cats = [];
+    const map = {};
+    parsed.forEach((row) => {
+      const c = row.category || "Uncategorised";
+      if (!map[c]) {
+        map[c] = [];
+        cats.push(c);
+      }
+      map[c].push({ name: row.addon, priceText: row.price, notes: row.notes });
+    });
+    setCategories(cats);
+    setItemsByCategory(map);
+  }
+
+  function addSelection() {
+    if (categories.length === 0) return;
+    setSelections((s) => [...s, { category: "", addon: "", qty: 1 }]);
+  }
+
+  function updateSelection(index, key, value) {
+    setSelections((s) => {
+      const copy = [...s];
+      copy[index][key] = value;
+      if (key === "category") {
+        copy[index].addon = "";
+      }
+      return copy;
+    });
+  }
+
+  function removeSelection(index) {
+    setSelections((s) => s.filter((_, i) => i !== index));
+  }
+
+  function priceToNumber(priceText) {
+    const cleaned = String(priceText || "").replace(/[£,]/g, "");
+    if (cleaned.includes("-") || cleaned.includes("–")) return null;
+    const match = cleaned.match(/\d+(?:\.\d+)?/);
+    return match ? parseFloat(match[0]) : null;
+  }
+
+  function computeTotal() {
+    return selections.reduce((sum, sel) => {
+      const item = (itemsByCategory[sel.category] || []).find((i) => i.name === sel.addon);
+      const num = priceToNumber(item?.priceText);
+      if (num === null || !num) return sum;
+      return sum + num * (sel.qty || 1);
+    }, 0);
+  }
+
+  function formatCurrency(n) {
+    return n ? `£${n.toFixed(2)}` : "£0.00";
+  }
+
+  function downloadXLSX() {
+    const wsData = [
+      ["Category", "Add-On", "Price (£)", "Notes"],
+      ...selections.map((sel) => {
+        const item = (itemsByCategory[sel.category] || []).find((i) => i.name === sel.addon);
+        return [sel.category, sel.addon, item?.priceText || "TBC", item?.notes || ""];
+      }),
+      [],
+      ["Total", formatCurrency(computeTotal())],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Estimate");
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
+    return blob;
+  }
+
+  function sendEmail() {
+    const blob = downloadXLSX();
+    saveAs(blob, "Estimate.xlsx");
+
+    const mailto = `mailto:${customer.email}?subject=${encodeURIComponent(
+      "Your Event Cost Estimate"
+    )}&body=${encodeURIComponent(
+      `Dear ${customer.name},\n\nThank you for your enquiry. Please find attached your cost estimate.\n\nBest regards,\nEvent Planning Team`
+    )}`;
+
+    window.location.href = mailto;
+  }
+
+  return (
+    <div className="p-8 max-w-6xl mx-auto font-[Poppins] bg-[#FFF8E1] text-gray-800">
+      <h1 className="text-4xl font-bold text-[#FF4081] mb-8">Event Cost Estimator</h1>
+
+      {/* Admin Access Section */}
+      <div className="mb-6 p-4 border border-dashed border-[#FF4081] rounded bg-white/70">
+        {!isAdmin ? (
+          <div>
+            <label className="block font-medium text-[#FF4081] mb-2">Admin Login</label>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                placeholder="Enter password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="p-2 border border-gray-300 rounded w-full"
+              />
+              <button onClick={authenticateAdmin} className="px-3 py-2 bg-[#FF4081] text-white rounded">Login</button>
+            </div>
+            {authError && <p className="text-red-500 text-sm mt-2">{authError}</p>}
+          </div>
+        ) : (
+          <div>
+            <label className="block font-medium mb-2 text-[#FF4081]">Upload Master XLSX Template</label>
+            <input type="file" accept=".xlsx,.xls" onChange={handleAdminUpload} className="p-2 border border-[#FFC107] rounded w-full" />
+            {lastUpload && <p className="mt-2 text-sm text-gray-600">Last upload: {lastUpload}</p>}
+            <button onClick={() => setIsAdmin(false)} className="mt-2 px-3 py-1 border border-[#FF4081] text-[#FF4081] rounded">Logout</button>
+          </div>
+        )}
+      </div>
+
+      {/* Customer Details */}
+      <section className="mb-8 bg-white rounded-xl shadow p-6 border-l-4 border-[#FF4081]">
+        <h2 className="text-xl font-semibold mb-4 text-[#FF4081]">Customer Details</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} placeholder="First Name" className="p-2 border border-gray-300 rounded" />
+          <input value={customer.surname} onChange={(e) => setCustomer({ ...customer, surname: e.target.value })} placeholder="Surname" className="p-2 border border-gray-300 rounded" />
+          <input value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })} placeholder="Email" type="email" className="p-2 border border-gray-300 rounded" />
+          <input value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} placeholder="Phone" className="p-2 border border-gray-300 rounded" />
+          <input value={customer.date} onChange={(e) => setCustomer({ ...customer, date: e.target.value })} type="date" className="p-2 border border-gray-300 rounded" />
+          <textarea value={customer.comment} onChange={(e) => setCustomer({ ...customer, comment: e.target.value.slice(0,200) })} placeholder="Comment (max 200 characters
