@@ -184,4 +184,123 @@ export default function EventCostEstimator() {
           <input value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })} placeholder="Email" type="email" className="p-2 border border-gray-300 rounded" />
           <input value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} placeholder="Phone" className="p-2 border border-gray-300 rounded" />
           <input value={customer.date} onChange={(e) => setCustomer({ ...customer, date: e.target.value })} type="date" className="p-2 border border-gray-300 rounded" />
-          <textarea value={customer.comment} onChange={(e) => setCustomer({ ...customer, comment: e.target.value.slice(0,200) })} placeholder="Comment (max 200 characters
+          <textarea value={customer.comment} onChange={(e) => setCustomer({ ...customer, comment: e.target.value.slice(0,200) })} placeholder="Comment (max 200 characters)" className="p-2 border border-gray-300 rounded col-span-1 sm:col-span-2 resize-none h-20" />
+        </div>
+      </section>
+
+      {/* Item Selection */}
+      <section className="mb-8 bg-white rounded-xl shadow p-6 border-l-4 border-[#FF4081]">
+        <h2 className="text-xl font-semibold mb-4 text-[#FF4081]">Item Selection</h2>
+        <button onClick={addSelection} className="mb-4 px-4 py-2 bg-[#FF4081] text-white rounded hover:bg-[#E91E63] transition-colors">
+          Add Item
+        </button>
+
+        {selections.map((sel, index) => (
+          <div key={index} className="mb-4 p-4 border border-gray-200 rounded bg-gray-50">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
+              <select
+                value={sel.category}
+                onChange={(e) => updateSelection(index, "category", e.target.value)}
+                className="p-2 border border-gray-300 rounded"
+              >
+                <option value="">Select Category</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+
+              <select
+                value={sel.addon}
+                onChange={(e) => updateSelection(index, "addon", e.target.value)}
+                className="p-2 border border-gray-300 rounded"
+                disabled={!sel.category}
+              >
+                <option value="">Select Add-on</option>
+                {(itemsByCategory[sel.category] || []).map((item) => (
+                  <option key={item.name} value={item.name}>{item.name}</option>
+                ))}
+              </select>
+
+              <input
+                type="number"
+                min="1"
+                value={sel.qty}
+                onChange={(e) => updateSelection(index, "qty", parseInt(e.target.value) || 1)}
+                className="p-2 border border-gray-300 rounded"
+                placeholder="Qty"
+              />
+
+              <button
+                onClick={() => removeSelection(index)}
+                className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+
+            {sel.addon && sel.category && (
+              <div className="mt-2 text-sm text-gray-600">
+                {(() => {
+                  const item = (itemsByCategory[sel.category] || []).find((i) => i.name === sel.addon);
+                  const price = priceToNumber(item?.priceText);
+                  return (
+                    <>
+                      Price: {item?.priceText || "TBC"} 
+                      {price && sel.qty > 1 && ` × ${sel.qty} = ${formatCurrency(price * sel.qty)}`}
+                      {item?.notes && <div className="text-xs mt-1">Notes: {item.notes}</div>}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {selections.length === 0 && (
+          <p className="text-gray-500 text-center py-8">No items selected. Click "Add Item" to start building your estimate.</p>
+        )}
+      </section>
+
+      {/* Total and Actions */}
+      <section className="mb-8 bg-white rounded-xl shadow p-6 border-l-4 border-[#FF4081]">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold text-[#FF4081]">Total Estimate</h2>
+          <div className="text-3xl font-bold text-[#FF4081]">{formatCurrency(computeTotal())}</div>
+        </div>
+
+        {selections.length > 0 && customer.name && customer.email && (
+          <div className="flex gap-4">
+            <button
+              onClick={() => saveAs(downloadXLSX(), "Estimate.xlsx")}
+              className="px-6 py-3 bg-[#4CAF50] text-white rounded hover:bg-[#45a049] transition-colors"
+            >
+              Download XLSX
+            </button>
+            <button
+              onClick={sendEmail}
+              className="px-6 py-3 bg-[#FF4081] text-white rounded hover:bg-[#E91E63] transition-colors"
+            >
+              Email to Customer
+            </button>
+          </div>
+        )}
+
+        {selections.length > 0 && (!customer.name || !customer.email) && (
+          <p className="text-gray-600 text-sm">Please fill in customer name and email to enable download/email options.</p>
+        )}
+      </section>
+
+      {/* Instructions */}
+      <section className="bg-blue-50 rounded-xl p-6 border-l-4 border-blue-500">
+        <h3 className="text-lg font-semibold mb-2 text-blue-800">How to Use</h3>
+        <ol className="list-decimal list-inside text-sm text-blue-700 space-y-1">
+          <li>Admin uploads master XLSX template with categories, items, and prices</li>
+          <li>Fill in customer details</li>
+          <li>Add items by selecting category and add-ons</li>
+          <li>Review total estimate</li>
+          <li>Download XLSX or email directly to customer</li>
+        </ol>
+      </section>
+    </div>
+  );
+}
